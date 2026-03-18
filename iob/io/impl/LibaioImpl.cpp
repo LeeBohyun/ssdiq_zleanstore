@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <linux/fs.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <cassert>
 #include <filesystem>
 #include <regex>
@@ -49,11 +50,32 @@ void LinuxBaseEnv::init(IoOptions ioOpts)
    this->ioOptions = ioOpts;
    raidCtl = std::make_unique<RaidController<int>>(ioOptions.path);
    raidCtl->forEach([this](std::string& dev, int& fd) {
+      // If path is a directory, create a data file inside it
+      {
+         struct stat st;
+         if (stat(dev.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
+            dev = dev + "/iob_data";
+         }
+      }
+      // Determine if target is a regular file (not a block device)
+      bool isFile = false;
+      {
+         struct stat st;
+         if (stat(dev.c_str(), &st) == 0) {
+            isFile = S_ISREG(st.st_mode);
+         } else {
+            // Path doesn't exist yet — check if parent directory exists
+            isFile = std::filesystem::is_directory(std::filesystem::path(dev).parent_path());
+         }
+      }
       int flags = O_RDWR | O_NOATIME;
       if (!ioOptions.ioUringNVMePassthrough) {
          flags |= O_DIRECT;
       } else {
          dev = fileToNGDevice(dev);
+      }
+      if (isFile) {
+         flags |= O_CREAT;
       }
       if (this->ioOptions.truncate) {
          flags |= O_TRUNC | O_CREAT;
@@ -94,7 +116,12 @@ u64 LinuxBaseEnv::storageSize()
    u64 end_of_block_device = 0;
    raidCtl->forEach([&end_of_block_device]([[maybe_unused]]std::string& dev, int& fd) {
       u64 this_end = 0;
-      ioctl(fd, BLKGETSIZE64, &this_end);
+      struct stat st;
+      if (fstat(fd, &st) == 0 && S_ISREG(st.st_mode)) {
+         this_end = st.st_size;
+      } else {
+         ioctl(fd, BLKGETSIZE64, &this_end);
+      }
       if (end_of_block_device == 0) {
          end_of_block_device = this_end;
       }

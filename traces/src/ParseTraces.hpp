@@ -176,7 +176,7 @@ void generateAccessFrequencyHistogram(const std::string& parsedTraceFile, const 
     rFile.close();
 
     // Execute the R script
-    std::system("Rscript plot_histogram.R");
+    // std::system("Rscript plot_histogram.R");
 }
 
 

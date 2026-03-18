@@ -13,6 +13,9 @@
 #include <thread>
 #include <chrono>
 #include <stdlib.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <iomanip>
 #include <mutex>
 
@@ -134,6 +137,28 @@ int main(int , char** ) {
    IoInterface::initInstance(ioOptions);
    string filesizeStr = getEnv("FILESIZE", "");
    const long filesize = (filesizeStr.size() == 0) ? IoInterface::instance().storageSize() : getBytesFromString(filesizeStr);
+
+   // For regular files: ensure the file is large enough via ftruncate + fallocate
+   bool isBlockDevice = true;
+   {
+      auto devInfo = IoInterface::instance().getDeviceInfo();
+      for (auto& dev : devInfo.devices) {
+         struct stat st;
+         if (fstat(dev.fd, &st) == 0 && S_ISREG(st.st_mode)) {
+            isBlockDevice = false;
+            if (st.st_size < filesize) {
+               std::cout << "extending file " << dev.name << " to " << filesize << " bytes" << std::endl;
+               int ret = ftruncate(dev.fd, filesize);
+               posix_check(ret == 0, "ftruncate failed");
+               // Try fallocate to actually allocate disk space (avoids sparse file issues with O_DIRECT)
+               ret = fallocate(dev.fd, 0, 0, filesize);
+               if (ret != 0) {
+                  std::cout << "fallocate not supported, using ftruncate only" << std::endl;
+               }
+            }
+         }
+      }
+   }
 
    // iosize
    double ioSize = -1;
@@ -269,7 +294,9 @@ int main(int , char** ) {
    while (true) {
       auto now = getSeconds();
       NvmeLog nvmeLog;
-      nvmeLog.loadOCPSmartLog();
+      if (isBlockDevice) {
+         nvmeLog.loadOCPSmartLog();
+      }
       
       long sumReads = 0;
       long sumWrites = 0;
@@ -314,9 +341,11 @@ int main(int , char** ) {
          header << "wa";
          if (!iobLogExists) {
             iobLog << header.str() << endl;
-            string s = "echo \"prefix,time,hash,type,data\" >> iob-smart-"+prefix+".csv";
-            int sys = system(s.c_str());
-            assert(sys == 0);
+            if (isBlockDevice) {
+               string s = "echo \"prefix,time,hash,type,data\" >> iob-smart-"+prefix+".csv";
+               int sys = system(s.c_str());
+               assert(sys == 0);
+            }
          }
          cout << header.str() << endl;
       }
@@ -361,20 +390,21 @@ int main(int , char** ) {
       iobLog << ss.str() << endl;
       cout << ss.str() << endl;
 
-      string smartLine = prefix+","+to_string(time)+","+jobOptions.logHash+"";
-      string sysSmart = 
-             "echo -n \""+smartLine+",smart,\"                                >> iob-smart-"+prefix+".csv" +
-             " ; sudo nvme smart-log         "+filename+" --output-format=json | tr -d '\\n'      >> iob-smart-"+prefix+".csv" +
-             " ; echo ""                                                                          >> iob-smart-"+prefix+".csv";
-      string sysOCP = 
-             "echo -n \""+smartLine+",ocp,\"                                 >> iob-smart-"+prefix+".csv" +
-             " ; sudo nvme ocp smart-add-log "+filename+" --output-format=json  2> /dev/null | tr -d '\\n'      >> iob-smart-"+prefix+".csv" +
-             " ; echo ""                                                                          >> iob-smart-"+prefix+".csv";
-      int sys = system(sysSmart.c_str());
-      assert(sys == 0);
-      sys = system(sysOCP.c_str());
-      assert(sys == 0);
-      //cout << sys << endl;
+      if (isBlockDevice) {
+         string smartLine = prefix+","+to_string(time)+","+jobOptions.logHash+"";
+         string sysSmart =
+                "echo -n \""+smartLine+",smart,\"                                >> iob-smart-"+prefix+".csv" +
+                " ; sudo nvme smart-log         "+filename+" --output-format=json | tr -d '\\n'      >> iob-smart-"+prefix+".csv" +
+                " ; echo ""                                                                          >> iob-smart-"+prefix+".csv";
+         string sysOCP =
+                "echo -n \""+smartLine+",ocp,\"                                 >> iob-smart-"+prefix+".csv" +
+                " ; sudo nvme ocp smart-add-log "+filename+" --output-format=json  2> /dev/null | tr -d '\\n'      >> iob-smart-"+prefix+".csv" +
+                " ; echo ""                                                                          >> iob-smart-"+prefix+".csv";
+         int sys = system(sysSmart.c_str());
+         assert(sys == 0);
+         sys = system(sysOCP.c_str());
+         assert(sys == 0);
+      }
 
       now = getSeconds();
       bool oneDone = false;

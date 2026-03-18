@@ -13,6 +13,7 @@
 #include <linux/fs.h>
 #include <nvme/api-types.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <cassert>
 #include <cstdint>
@@ -91,9 +92,15 @@ LiburingChannel& LiburingEnv::getIoChannel(int channel)
 // -------------------------------------------------------------------------------------
 LiburingChannel::LiburingChannel(RaidController<int>& raidCtl, IoOptions ioOptions, LiburingEnv& env) : LinuxBaseChannel(raidCtl, ioOptions)
 {
-   struct nvme_id_ns ns;
-   nvme_identify(raidCtl.device(0), 1, NVME_IDENTIFY_CNS_NS, NVME_CSI_NVM, &ns);
-	lba_sz = 1 << ns.lbaf[(ns.flbas & 0x0f)].ds;
+   // Only query NVMe namespace info for block devices
+   struct stat _st;
+   if (fstat(raidCtl.device(0), &_st) == 0 && S_ISBLK(_st.st_mode)) {
+      struct nvme_id_ns ns;
+      nvme_identify(raidCtl.device(0), 1, NVME_IDENTIFY_CNS_NS, NVME_CSI_NVM, &ns);
+      lba_sz = 1 << ns.lbaf[(ns.flbas & 0x0f)].ds;
+   } else {
+      lba_sz = 512; // default LBA size for regular files
+   }
    
    io_uring_params iouParameters;
    memset(&iouParameters, 0, sizeof(iouParameters));
