@@ -62,6 +62,7 @@ struct JobOptions {
    int bs = 4096;
    int io_alignment = 0;
    int64_t io_size = filesize; // 0 means no restrictions
+   int64_t load_io_size = 0; // per thread; this much io runs at full speed before rateLimit kicks in
    float writePercent = 0; // 0.0 - 1.0
    float rateLimit = 0;
    float totalRate = 0;
@@ -101,6 +102,10 @@ struct JobOptions {
          return 0;
       }
       return io_size / bs;
+   }
+
+   int64_t load_operations() const {
+      return load_io_size / bs;
    }
 
    std::string print() const {
@@ -286,6 +291,7 @@ public:
    uint64_t preparedFsyncs = 0;
    const int64_t totalBlocks = options.totalBlocks();
    const int64_t ops = options.io_operations();
+   const int64_t loadOps = options.load_operations();
 
    std::atomic<bool> keep_running = true;
    IoChannel& ioChannel;
@@ -374,6 +380,10 @@ public:
       keep_running = false;
    }
 
+   bool inLoadPhase() const {
+      return (int64_t)(stats.reads + stats.writes) < loadOps;
+   }
+
    int runIo() {
       uint64_t countGets = 0;
       //std::cout << options.name << " ready: ops:" <<  ops << " bs: " << options.bs << std::endl;
@@ -406,14 +416,22 @@ public:
 
       auto lastPrintTimeClock = getSeconds();
       auto nextStartTime = mean::readTSC();
+      bool ratePhaseStarted = false;
       long longLat = 0;
       auto lastCycle = mean::readTSC();
       while ((ops <= 0 || completed < ops) && keep_running) {
          //do {
             if (options.breakEvery <= 0 || (time+1) % (options.breakEvery + options.breakFor) < options.breakEvery) { // check if there is a break
                while (availableReqStackCnt > 0 && ((ops <= 0 || completed < ops) && keep_running)) {
-                  if (options.rateLimit > 0) { // when rate limiting is enabled only add more if needed
+                  if (options.rateLimit > 0 && submitted >= loadOps) { // when rate limiting is enabled only add more if needed; the first loadOps requests (load phase) run at full speed
                      auto now = mean::readTSC();
+                     if (!ratePhaseStarted) {
+                        ratePhaseStarted = true;
+                        nextStartTime = now;
+                        if (loadOps > 0) {
+                           std::cout << name << ": load phase done (" << loadOps << " ops), rate limiting to " << options.rateLimit << " IOPS" << std::endl << std::flush;
+                        }
+                     }
                      if (now >= nextStartTime) {
                         if (mean::tscDifferenceS(now, nextStartTime) > 5) {
                            longLat++;
@@ -467,7 +485,7 @@ public:
          if (time != localTime) {
             localTime = time;
 
-            // per seconds stats 
+            // per seconds stats
             stats.iopsPerSecond[stats.seconds] = completed - lastOps;
             stats.readsPerSecond[stats.seconds] = stats.reads - lastReads;
             stats.writesPerSecond[stats.seconds]= stats.writes - lastWrites;

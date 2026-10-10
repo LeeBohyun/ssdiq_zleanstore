@@ -117,6 +117,8 @@ public:
 int main(int , char** ) {
    using namespace mean;
    std::cout << "start" << std::endl;
+   calibrateTscPerNs();
+   std::cout << "tscPerNs: " << tscPerNs << std::endl;
    std::string filename = getEnvRequired("FILENAME");
    std::string ioEngine = getEnv("IOENGINE", "io_uring");
    const int threads = getEnv("THREADS",1);
@@ -172,6 +174,15 @@ int main(int , char** ) {
    std::cout << "iosize: " << ioSize << std::endl;
    long opsPerThread = ioSize / bufSize / threads;
 
+   // load phase: this much io runs at full speed before the rate-limited measurement starts
+   long loadIoSize = 0;
+   if (getEnv("LOAD_IO_SIZE", "").size() > 0) {
+      loadIoSize = getBytesFromString(getEnv("LOAD_IO_SIZE", ""));
+   } else {
+      double loadPercentFile = getEnv("LOAD_PERCENT_FILE", 0.0f);
+      loadIoSize = filesize * loadPercentFile;
+   }
+
    //fill
    const double fill = getEnv("FILL", 1);
    long maxUsedFilesSize = getEnv("FILL", "").size() > 0 ? filesize*fill : filesize;
@@ -196,6 +207,7 @@ int main(int , char** ) {
    std::cout << "BS: " << bufSize << std::endl;
    std::cout << "FILESIZE: " << filesize << " use: " << maxUsedFilesSize << " (FILL: " <<(getEnv("FILL", "1")) << ") in pages: " << maxPage << std::endl;
    std::cout << "IO_SIZE: " << opsPerThread*bufSize/(float)GIBI << "GiB pages: " << opsPerThread << " per thread" << std::endl;
+   std::cout << "LOAD_IO_SIZE: " << loadIoSize/(float)GIBI << "GiB (full speed before rate limiting)" << std::endl;
    std::cout << "INIT: " << init << std::endl;
    std::cout << "IO_DEPTH: " << ioOptions.iodepth << std::endl;
    std::cout << "IOENGING: " << ioEngine << std::endl;
@@ -228,12 +240,21 @@ int main(int , char** ) {
    jobOptions.filename = filename;
    jobOptions.iodepth = ioOptions.iodepth;
    jobOptions.io_alignment = bufSize;
-   jobOptions.io_size = ioSize / threads;
+   jobOptions.io_size = ioSize < 0 ? ioSize : (ioSize + loadIoSize) / threads;
+   jobOptions.load_io_size = loadIoSize / threads;
    jobOptions.writePercent = writePercent;
    jobOptions.threads = threads;
    jobOptions.printEverySecond = false;
    jobOptions.fdatasync = 0;
    jobOptions.totalRate = getEnv("RATE", 0);
+   const double writeRateMBs = getEnv("WRITE_RATE_MBS", 0.0f); // target write intensity in MiB/s, overrides RATE
+   if (writeRateMBs > 0) {
+      if (writePercent <= 0) {
+         throw std::logic_error("WRITE_RATE_MBS requires RW > 0");
+      }
+      jobOptions.totalRate = writeRateMBs * MEBI / bufSize / writePercent; // total IOPS such that writes alone hit writeRateMBs
+      std::cout << "WRITE_RATE_MBS: " << writeRateMBs << " MiB/s => RATE: " << jobOptions.totalRate << " IOPS" << std::endl;
+   }
    jobOptions.rateLimit = jobOptions.totalRate / threads;
    jobOptions.exponentialRate = getEnv("EXPRATE", true);
 
@@ -286,8 +307,9 @@ int main(int , char** ) {
    //if (runtimeLimit > 0) {
    cout << "runtime: " << runtimeLimit << " s" << endl;
    auto start = getSeconds();
+   double measureStart = loadIoSize > 0 ? -1 : start; // RUNTIME counts from here, i.e., after the load phase
    //std::this_thread::sleep_for(std::chrono::seconds(1));
-   long lastOCPUpdateTime = -1; 
+   long lastOCPUpdateTime = -1;
    long prevPhyWrites = -1;
    long prevPhyReads = -1;
    long prevHostWrites = -1;
@@ -323,6 +345,17 @@ int main(int , char** ) {
       //std::cout << " total: r: "<< sumRead/1000 << "k " << " w: " << sumWrites << "k " << std::endl << std::flush;
       //maxRead = std::max(maxRead, sumRead);
 
+      if (measureStart < 0) {
+         bool loading = false;
+         for (auto& t: threadVec) {
+            loading |= t->gen.inLoadPhase();
+         }
+         if (!loading) {
+            measureStart = now;
+            std::cout << "load phase complete at t=" << time << "s, measurement starts" << std::endl;
+         }
+      }
+
       if (time == 0) {
          std::stringstream header;
          header << "stat,type,prefix,";
@@ -338,7 +371,8 @@ int main(int , char** ) {
          header << "phyWriteMBs, phyReadMBs,";
          header << "percentFreeBlocks,";
          header << "softECCError,unalignedIO,maxUserDataEraseCount,minUserDataEraseCount,currentThrottlingStatus,";
-         header << "wa";
+         header << "wa,";
+         header << "phase,targetWriteMBs";
          if (!iobLogExists) {
             iobLog << header.str() << endl;
             if (isBlockDevice) {
@@ -386,7 +420,9 @@ int main(int , char** ) {
       ss << "," << (int)nvmeLog.percentFreeBlocks();
       ss << "," << nvmeLog.softECCError() << "," << nvmeLog.unalignedIO() << "," << nvmeLog.maxUserDataEraseCount();
       ss << "," << nvmeLog.minUserDataEraseCount() << "," << (int)nvmeLog.currentThrottlingStatus();
-      ss << "," << thisSecondWA; 
+      ss << "," << thisSecondWA;
+      ss << "," << (measureStart < 0 ? "load" : "measure");
+      ss << "," << writeRateMBs;
       iobLog << ss.str() << endl;
       cout << ss.str() << endl;
 
@@ -415,7 +451,7 @@ int main(int , char** ) {
          std::cout << "one done, break;" << std::endl;
          break; // when the first one ist done, stop all
       }
-      if (runtimeLimit > 0 && now - start > runtimeLimit) {
+      if (runtimeLimit > 0 && measureStart >= 0 && now - measureStart > runtimeLimit) {
          break;
       }
       std::this_thread::sleep_for(std::chrono::microseconds((long)((time + 1 - (now - start))*1e6)));

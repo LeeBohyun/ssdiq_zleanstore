@@ -7,6 +7,7 @@
 #include <iostream>
 #include <iomanip>
 #include <chrono>
+#include <thread>
 
 namespace mean {
 inline uint64_t readTSC() {
@@ -55,6 +56,15 @@ inline u64 nanoFromTimePoint(TimePoint tp) {
 inline float getSeconds() {
 	auto tp = getTimePoint();
 	return nanoFromTimePoint(tp) * NANO; 
+}
+// measure the actual TSC frequency against the wall clock; the 2.4 default is only correct on some CPUs
+inline void calibrateTscPerNs(int ms = 50) {
+    auto startTp = getTimePoint();
+    auto startTsc = readTSCfenced();
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+    auto endTsc = readTSCfenced();
+    auto endTp = getTimePoint();
+    tscPerNs = (double)(endTsc - startTsc) / timePointDifference(endTp, startTp);
 }
 inline float getRoundSeconds() {
 	static auto last = getTimePoint();

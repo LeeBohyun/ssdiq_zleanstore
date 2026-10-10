@@ -54,7 +54,7 @@ enum {
 
 class NvmeLog {
    bool ocpSupported = false;
-   alignas(8) std::array<uint8_t, sizeof(__u8) * C0_SMART_CLOUD_ATTR_LEN> log_data;
+   alignas(8) std::array<uint8_t, sizeof(__u8) * C0_SMART_CLOUD_ATTR_LEN> log_data = {}; // zeroed so non-OCP drives report 0 instead of garbage
 
    uint64_t toBigEndian(uint64_t value) {
       if (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__) {
