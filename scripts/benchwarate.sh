@@ -24,6 +24,10 @@ RUNTIME=${RUNTIME:-1800}                          # measurement seconds per rate
 export IOENGINE=io_uring
 export FILL=${FILL:-1}
 
+# newer sudo ignores -E ("preserving the entire environment is not supported"),
+# so preserve the needed variables explicitly
+SUDO="sudo --preserve-env=FILESIZE,PREFIX,IOENGINE,FILL,ZIPF,ZONES,ZNS_ACTIVE_ZONES,ZNS_ZONE_SIZE"
+
 cmake -DCMAKE_BUILD_TYPE=Release ..
 make -j iob
 
@@ -41,11 +45,11 @@ sanitize_nvme() {
 }
 sanitize_nvme_and_init() {
 	sanitize_nvme
-	sudo -E FILENAME=$FILENAME INIT=yes IO_SIZE_PERCENT_FILE=0.01 IO_DEPTH=1 BS=4K THREADS=1 PATTERN=sequential RW=1 iob/iob >> iob-output-$PREFIX.csv
+	$SUDO FILENAME=$FILENAME INIT=yes IO_SIZE_PERCENT_FILE=0.01 IO_DEPTH=1 BS=4K THREADS=1 PATTERN=sequential RW=1 iob/iob >> iob-output-$PREFIX.csv
 }
 run_wa_exp_rate() {
 	RATE_MBS=$1
-	sudo -E FILENAME=$FILENAME INIT=false RUNTIME=$RUNTIME LOAD_PERCENT_FILE=$LOAD_PERCENT_FILE WRITE_RATE_MBS=$RATE_MBS \
+	$SUDO FILENAME=$FILENAME INIT=false RUNTIME=$RUNTIME LOAD_PERCENT_FILE=$LOAD_PERCENT_FILE WRITE_RATE_MBS=$RATE_MBS \
 		IO_DEPTH=128 BS=$UNI_BS THREADS=4 PATTERN=$PATTERN_ARG RW=1 iob/iob >> iob-output-$PREFIX.csv
 	sleep 2m
 }

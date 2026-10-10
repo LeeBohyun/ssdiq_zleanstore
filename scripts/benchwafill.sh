@@ -22,6 +22,10 @@ OVERWRITE=${OVERWRITE:-5} # overwrites of the used (fill) region per measurement
 
 export IOENGINE=io_uring
 
+# newer sudo ignores -E ("preserving the entire environment is not supported"),
+# so preserve the needed variables explicitly
+SUDO="sudo --preserve-env=FILESIZE,PREFIX,IOENGINE,ZIPF,ZONES,ZNS_ACTIVE_ZONES,ZNS_ZONE_SIZE"
+
 cmake -DCMAKE_BUILD_TYPE=Release ..
 make -j iob
 
@@ -39,13 +43,13 @@ sanitize_nvme() {
 }
 init_fill() {
 	# sequentially write the first FILL x capacity once, then exit (IO_SIZE=0)
-	sudo -E FILENAME=$FILENAME FILL=$FILL INIT=yes IO_SIZE=0 IO_DEPTH=128 BS=4K THREADS=1 RW=1 iob/iob >> iob-output-$PREFIX.csv
+	$SUDO FILENAME=$FILENAME FILL=$FILL INIT=yes IO_SIZE=0 IO_DEPTH=128 BS=4K THREADS=1 RW=1 iob/iob >> iob-output-$PREFIX.csv
 }
 run_wa_exp_uniform() {
 	# IO_SIZE_PERCENT_FILE is relative to the whole device, scale by FILL so
 	# every fill level overwrites its used region OVERWRITE times
 	IOPF=$(awk "BEGIN{print $OVERWRITE * $FILL}")
-	sudo -E FILENAME=$FILENAME FILL=$FILL INIT=false IO_SIZE_PERCENT_FILE=$IOPF IO_DEPTH=128 BS=$UNI_BS THREADS=4 PATTERN=uniform RW=1 iob/iob >> iob-output-$PREFIX.csv
+	$SUDO FILENAME=$FILENAME FILL=$FILL INIT=false IO_SIZE_PERCENT_FILE=$IOPF IO_DEPTH=128 BS=$UNI_BS THREADS=4 PATTERN=uniform RW=1 iob/iob >> iob-output-$PREFIX.csv
 }
 
 for FILL in $FILLS; do

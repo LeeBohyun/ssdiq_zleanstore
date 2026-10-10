@@ -28,6 +28,10 @@ SLEEP_BETWEEN=${SLEEP_BETWEEN:-1m}                # settle time between rates (n
 export IOENGINE=io_uring
 export FILL=1 # SSD 100% full
 
+# newer sudo ignores -E ("preserving the entire environment is not supported"),
+# so preserve the needed variables explicitly
+SUDO="sudo --preserve-env=FILESIZE,PREFIX,IOENGINE,FILL,ZIPF,ZONES,ZNS_ACTIVE_ZONES,ZNS_ZONE_SIZE"
+
 cmake -DCMAKE_BUILD_TYPE=Release ..
 make -j iob
 
@@ -45,17 +49,17 @@ sanitize_nvme() {
 }
 sanitize_nvme_and_init() {
 	sanitize_nvme
-	sudo -E FILENAME=$FILENAME INIT=yes IO_SIZE_PERCENT_FILE=0.01 IO_DEPTH=1 BS=4K THREADS=1 PATTERN=sequential RW=1 iob/iob >> iob-output-$PREFIX.csv
+	$SUDO FILENAME=$FILENAME INIT=yes IO_SIZE_PERCENT_FILE=0.01 IO_DEPTH=1 BS=4K THREADS=1 PATTERN=sequential RW=1 iob/iob >> iob-output-$PREFIX.csv
 }
 load_full_speed() {
 	# overwrite the device $1 times (x capacity) with the measurement pattern at full speed
 	OVERWRITES=$1
-	sudo -E FILENAME=$FILENAME INIT=false IO_SIZE_PERCENT_FILE=$OVERWRITES IO_DEPTH=128 BS=$UNI_BS THREADS=4 \
+	$SUDO FILENAME=$FILENAME INIT=false IO_SIZE_PERCENT_FILE=$OVERWRITES IO_DEPTH=128 BS=$UNI_BS THREADS=4 \
 		PATTERN=$PATTERN_ARG RW=1 iob/iob >> iob-output-$PREFIX.csv
 }
 run_ops_exp_rate() {
 	RATE_MBS=$1
-	sudo -E FILENAME=$FILENAME INIT=false RUNTIME=$RUNTIME WRITE_RATE_MBS=$RATE_MBS IO_DEPTH=128 BS=$UNI_BS THREADS=4 \
+	$SUDO FILENAME=$FILENAME INIT=false RUNTIME=$RUNTIME WRITE_RATE_MBS=$RATE_MBS IO_DEPTH=128 BS=$UNI_BS THREADS=4 \
 		PATTERN=$PATTERN_ARG RW=1 iob/iob >> iob-output-$PREFIX.csv
 }
 
