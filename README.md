@@ -87,7 +87,9 @@ PATTERN=zns ZNS_ACTIVE_ZONES=14 ZNS_ZONE_SIZE=1024M RATE=0
 
 ---
 
-### NOWA (No Write Amplification)
+### NOWA (No Write Amplification write pattern)
+
+For how ZLeanStore writes to the SSD using this pattern, see the [ZLeanStore repository](https://github.com/LeeBohyun/ZLeanStore).
 
 Write pattern that guarantees SSD WAF ~= 1:
 
