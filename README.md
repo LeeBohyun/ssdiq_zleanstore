@@ -10,7 +10,7 @@
 
 This repository contains benchmarking and simulation tools for **ZLeanStore**.
 
-The ZNS-like write pattern, the **NOWA (Non-Overwriting Write Access)** pattern, and an LSM-engine-like write pattern have been added.  
+The ZNS-like write pattern, the **NOWA (No Write Amplification)** pattern, and an LSM-engine-like write pattern have been added.  
 Furthermore, a naive wear-leveling algorithm has been added to the SSD simulator.
 
 ---
