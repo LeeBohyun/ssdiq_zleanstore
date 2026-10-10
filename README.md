@@ -10,7 +10,7 @@
 
 This repository contains benchmarking and simulation tools for **ZLeanStore**.
 
-The ZNS-like write pattern, the **NOWA (No Write Amplification)** pattern, and an LSM-engine-like write pattern have been added.  
+The ZNS-like write pattern, the **NoWA (No Write Amplification)** pattern, and an LSM-engine-like write pattern have been added.  
 Furthermore, a naive wear-leveling algorithm has been added to the SSD simulator.
 
 ---
@@ -20,7 +20,7 @@ Furthermore, a naive wear-leveling algorithm has been added to the SSD simulator
 - `iob/` — I/O benchmarking tool with support for ZNS and zone-aware patterns  
 - `sim/` — Simulator for zone-based GC and cleaning behavior  
 - `shared/` — Shared utilities and workload generators  
-  - `patterngen.hpp` — Implementation of access patterns (uniform, zipf, zones, NOWA, etc.)  
+  - `patterngen.hpp` — Implementation of access patterns (uniform, zipf, zones, NoWA, etc.)  
 - `scripts/` — Automation for running experiments (both simulated and real SSDs)  
 - `paper/` — Plotting and analysis scripts  
 
@@ -87,7 +87,7 @@ PATTERN=zns ZNS_ACTIVE_ZONES=14 ZNS_ZONE_SIZE=1024M RATE=0
 
 ---
 
-### NOWA (No Write Amplification write pattern)
+### NoWA (No Write Amplification write pattern)
 
 For how ZLeanStore writes to the SSD using this pattern, see the [ZLeanStore repository](https://github.com/LeeBohyun/ZLeanStore).
 
@@ -166,7 +166,7 @@ make
 
 ## Running IOB
 
-### Simple NOWA Example
+### Simple NoWA Example
 
 
 ```sh
@@ -195,7 +195,7 @@ sim/sim --capacity=20G --erase=1M --page=4k --ssdfill=0.875 \
 - `benchopsrateall.sh` — Run `benchopsrate.sh` on multiple SSDs in parallel (device list or `VENDOR=` filter)  
 - `benchwafill.sh` — Write throughput (and WAF on OCP drives) vs. fill factor (20–100%), uniform overwrites per fill level  
 - `benchwafillall.sh` — Run `benchwafill.sh` on multiple SSDs in parallel (device list or `VENDOR=` filter)  
-- `benchseq.sh` — Sequential and ZNS/NOWA workloads  
+- `benchseq.sh` — Sequential and ZNS/NoWA workloads  
 - `benchlat.sh` — Latency under load  
 - `benchbench.sh` — Summary table generation  
 
