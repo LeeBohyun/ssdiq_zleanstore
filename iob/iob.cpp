@@ -227,6 +227,7 @@ int main(int , char** ) {
 
    jobOptions.breakEvery = getEnv("BREAK_EVERY", 0); // seconds
    jobOptions.breakFor = getEnv("BREAK_FOR", 0);
+   jobOptions.threadStatsInterval = getEnv("THREAD_STATS_INTERVAL", 60); // note: windows only flush when a full interval elapses
 
    jobOptions.filesize = maxUsedFilesSize;
    std::cout << "actual used filesize = " << jobOptions.filesize << std::endl;

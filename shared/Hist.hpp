@@ -93,6 +93,7 @@ public:
 		result += prefix + "99p9,";
 		result += prefix + "99p99,";
 		result += prefix + "99p999,";
+		result += prefix + "99p9999,";
 		result += prefix + "max,";
 		result += prefix + "avg,";
 		result += prefix + "tot,";
@@ -122,6 +123,7 @@ public:
 		result += std::to_string(getPercentile(99.9)) + ",";
 		result += std::to_string(getPercentile(99.99)) + ",";
 		result += std::to_string(getPercentile(99.999)) + ",";
+		result += std::to_string(getPercentile(99.9999)) + ",";
 		result += std::to_string(max) + ",";
       if (cnt != 0) {
          result += std::to_string(total / cnt) + ",";

@@ -21,7 +21,10 @@ IOPS_FRACTION=${IOPS_FRACTION:-0.25}
 READ_RATE_MBS_PER_THREAD=${READ_RATE_MBS_PER_THREAD:-40}
 READ_THREADS=${READ_THREADS:-4}
 READ_BS=${READ_BS:-4K}
-MEASURE_RUNTIME=${MEASURE_RUNTIME:-300}
+# 1200s at 10240 IOPS/thread = ~12M samples per thread, enough for 6-nines
+# percentiles; the reader uses ONE stats window spanning the whole measurement
+MEASURE_RUNTIME=${MEASURE_RUNTIME:-1230}
+STATS_WINDOW=$((MEASURE_RUNTIME - 30)) # must complete within the runtime (no final flush)
 WRITER_RUNTIME=$((MEASURE_RUNTIME + 120))
 
 READ_IOPS=$((READ_RATE_MBS_PER_THREAD * READ_THREADS * 256)) # 256 = MiB / 4KiB
@@ -52,6 +55,7 @@ run_phase() {
 	WPID=$!
 	sleep 60
 	FILENAME=$DEV PREFIX=$PREFIX-$TAG-r FILL=$FILLV INIT=disable RUNTIME=$MEASURE_RUNTIME RATE=$READ_IOPS \
+		THREAD_STATS_INTERVAL=$STATS_WINDOW \
 		IO_DEPTH=64 BS=$READ_BS THREADS=$READ_THREADS PATTERN=uniform RW=0 iob/iob >> iob-output-$PREFIX.csv 2>&1
 	wait $WPID
 	sleep 30
@@ -75,11 +79,12 @@ for TAG in f100 f50; do
 	echo "=== $TAG: writer achieved (IOPS, MiB/s, WAF) vs target $RATE_MBS MiB/s:"
 	awk -F, '$1=="keep" && $5+0 > 30 { iops+=$19; mbs+=$21; n++; if ($(NF-2)+0>0) { wa+=$(NF-2); wn++ } }
 		END { if (n) printf "  %.0f IOPS, %.0f MiB/s, WAF %.2f\n", iops/n, mbs/n, (wn ? wa/wn : 0) }' iob-log-$PREFIX-$TAG-w.csv
-	echo "=== $TAG: read latency (us, averaged over 60s windows and threads):"
+	echo "=== $TAG: read latency (us, one full-run window per thread, averaged over threads):"
 	awk -F, '$1=="hash" { for (i=1;i<=NF;i++) h[$i]=i; next }
 		{ n++; s50+=$h["r50p"]; s99+=$h["r99p"]; s999+=$h["r99p9"]; s9999+=$h["r99p99"];
+		  s99999+=$h["r99p999"]; s999999+=$h["r99p9999"]; cnt+=$h["rcnt"];
 		  if ($h["rmax"]+0 > mx) mx=$h["rmax"] }
-		END { if (n) printf "  p50 %.0f  p99 %.0f  p99.9 %.0f  p99.99 %.0f  max %.0f\n",
-			s50/n, s99/n, s999/n, s9999/n, mx }' iob-stats-id*-$PREFIX-$TAG-r.csv
+		END { if (n) printf "  p50 %.0f  p99 %.0f  p99.9 %.0f  p99.99 %.0f  p99.999 %.0f  p99.9999 %.0f  max %.0f  (samples %d)\n",
+			s50/n, s99/n, s999/n, s9999/n, s99999/n, s999999/n, mx, cnt }' iob-stats-id*-$PREFIX-$TAG-r.csv
 done
 echo "$PREFIX same-IOPS fill comparison done"
